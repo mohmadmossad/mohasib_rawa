@@ -1,0 +1,58 @@
+workflows:
+  build-android:
+    name: Build Android APK & AAB (release)
+    max_build_duration: 120
+    environment:
+      flutter: stable
+      java: 17
+      vars:
+        PACKAGE_NAME: "com.example.mohasib_rawa" # عدّل لاسم الحزمة في android/app/src/main/AndroidManifest.xml
+        KEYSTORE_BASE64: "" # إذا أردت التوقيع أوتوماتيكياً: ضع محتوى keystore (base64) هنا كمتغيّر CI
+        KEYSTORE_PASSWORD: ""
+        KEY_ALIAS: ""
+        KEY_PASSWORD: ""
+    scripts:
+      - name: Checkout
+        script: |
+          echo "Source: $CM_SOURCE_BRANCH"
+      - name: Install dependencies
+        script: |
+          flutter pub get
+      - name: Codegen (Isar)
+        script: |
+          flutter pub run build_runner build --delete-conflicting-outputs || true
+      - name: Run analyzer (optional)
+        script: |
+          flutter analyze || true
+      - name: Run tests (optional)
+        script: |
+          flutter test || true
+      - name: Build APK (unsigned or signed if keystore provided)
+        script: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > /tmp/keystore.jks
+            mkdir -p android/app
+            echo "storeFile=/tmp/keystore.jks" > /tmp/keystore.properties
+            echo "storePassword=$KEYSTORE_PASSWORD" >> /tmp/keystore.properties
+            echo "keyAlias=$KEY_ALIAS" >> /tmp/keystore.properties
+            echo "keyPassword=$KEY_PASSWORD" >> /tmp/keystore.properties
+            # Configure gradle signingProperties (this assumes your android/build.gradle reads ../keystore.properties)
+            mv /tmp/keystore.jks android/app/keystore.jks || true
+            flutter build apk --release --target-platform android-arm,android-arm64,android-x64
+          else
+            flutter build apk --release
+          fi
+      - name: Build AAB (app bundle)
+        script: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            flutter build appbundle --release
+          else
+            flutter build appbundle --release
+          fi
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/bundle/release/app-release.aab
+    publishing:
+      email:
+        recipients:
+          - "your-email@example.com" # ضع بريدك هنا لتستلم إشعارات البناء
